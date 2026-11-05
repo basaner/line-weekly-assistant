@@ -1,0 +1,7 @@
+fastapi==0.115.11
+uvicorn==0.34.0
+line-bot-sdk==3.27.0
+google-genai==2.34.0
+apscheduler==3.11.3
+python-dotenv==1.2.2
+requests==2.34.2
