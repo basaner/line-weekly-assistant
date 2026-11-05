@@ -35,6 +35,7 @@ from ai_summarizer import summarize_weekly_report
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "").strip()
 PORT = int(os.getenv("PORT", "8000"))
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
@@ -87,6 +88,22 @@ def push_to_group(group_id: str, text: str):
                 messages=[TextMessage(text=text)]
             )
         )
+
+def send_to_google_sheet(group_name: str, user_name: str, message: str):
+    """ส่งข้อมูลบันทึกลง Google Sheets แบบเรียลไทม์ (ถ้ามีการตั้งค่า URL)"""
+    if not GOOGLE_SHEET_WEBHOOK_URL:
+        return
+    try:
+        import requests
+        payload = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "group_name": group_name,
+            "user_name": user_name,
+            "message": message
+        }
+        requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=5)
+    except Exception as e:
+        print(f"[Google Sheet Sync Error] {e}")
 
 # ----------------- LINE WEBHOOK -----------------
 @app.post("/webhook")
@@ -207,6 +224,7 @@ def handle_message(event):
             user_name = get_user_display_name(api_client, group_id, user_id) if user_id else "สมาชิก"
 
         save_message(group_id, user_id or "unknown", user_name, text)
+        send_to_google_sheet(g_name, user_name, text)
 
 # ----------------- ตั้งเวลารันอัตโนมัติ (SCHEDULER) -----------------
 scheduler = BackgroundScheduler()
