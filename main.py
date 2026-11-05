@@ -13,11 +13,14 @@ from linebot.v3.messaging import (
     Configuration,
     ApiClient,
     MessagingApi,
+    MessagingApiBlob,
     ReplyMessageRequest,
     PushMessageRequest,
     TextMessage
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent, JoinEvent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent, JoinEvent
+from google import genai
+from google.genai import types
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from database import (
@@ -225,6 +228,66 @@ def handle_message(event):
 
         save_message(group_id, user_id or "unknown", user_name, text)
         send_to_google_sheet(g_name, user_name, text)
+
+# เมื่อมีคนส่งรูปภาพเข้ามาในกลุ่ม
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    group_id = getattr(event.source, "group_id", None) or getattr(event.source, "room_id", None)
+    user_id = getattr(event.source, "user_id", None)
+
+    if not group_id:
+        return
+
+    # ดึงชื่อกลุ่มและชื่อผู้ส่ง
+    with ApiClient(configuration) as api_client:
+        g_name = get_group_title(api_client, group_id)
+        if not is_group_registered(group_id):
+            register_group(group_id, g_name)
+        user_name = get_user_display_name(api_client, group_id, user_id) if user_id else "สมาชิก"
+
+    # 1. โหลดข้อมูลรูปภาพจาก LINE
+    try:
+        with ApiClient(configuration) as api_client:
+            blob_api = MessagingApiBlob(api_client)
+            image_bytes = blob_api.get_message_content(event.message.id)
+    except Exception as e:
+        print(f"[LINE Blob Error] {e}")
+        return
+
+    # 2. ให้ Gemini วิเคราะห์รูปภาพ (พร้อมคัดกรอง Noise)
+    analysis_text = ""
+    if GEMINI_API_KEY:
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            prompt = (
+                "วิเคราะห์รูปภาพนี้: หากเป็นภาพที่เกี่ยวกับการทำงาน (เช่น เครื่องจักร, ชิ้นงาน, ข้อบกพร่อง, เอกสาร, "
+                "กราฟ, รายงาน, หน้าจอ, หรือหน้างาน) จงสรุปประเด็นสำคัญ ตัวเลข หรือข้อความที่พบอย่างกระชับใน 1-2 ประโยค "
+                "แต่หากเป็นภาพที่ไม่เกี่ยวกับการทำงานเลย (เช่น รูปอาหาร, ดอกไม้ทักทาย, มีมตลก, เซลฟี่) ให้ตอบกลับเพียงคำเดียวว่า 'IGNORE'"
+            )
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                    prompt
+                ]
+            )
+            res_text = response.text.strip() if response.text else ""
+            if "IGNORE" in res_text.upper():
+                print(f"[Image Filtered] ภาพไม่เกี่ยวกับงาน (ข้ามการบันทึก)")
+                return
+            analysis_text = res_text
+        except Exception as e:
+            print(f"[Gemini Vision Error] {e}")
+
+    if not analysis_text:
+        analysis_text = "ภาพถ่ายประกอบงาน"
+
+    full_record = f"[📷 รูปภาพ] {analysis_text}"
+    print(f"[{g_name}] {user_name}: {full_record}")
+
+    # 3. บันทึกลง SQLite และ Google Sheets
+    save_message(group_id, user_id or "unknown", user_name, full_record)
+    send_to_google_sheet(g_name, user_name, full_record)
 
 # ----------------- ตั้งเวลารันอัตโนมัติ (SCHEDULER) -----------------
 scheduler = BackgroundScheduler()
