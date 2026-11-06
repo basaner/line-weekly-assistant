@@ -23,9 +23,7 @@ def summarize_weekly_report(group_name: str, messages: list, gemini_api_key: str
     # กรณีมี Gemini API Key ให้ใช้ AI สรุปอย่างชาญฉลาด
     api_key = gemini_api_key or os.getenv("GEMINI_API_KEY", "").strip()
     if api_key:
-        try:
-            client = genai.Client(api_key=api_key)
-            prompt = f"""
+        prompt = f"""
 คุณเป็นเลขานุการและผู้ช่วยบริหารโครงการมืออาชีพ จงวิเคราะห์และสรุปบทสนทนาการทำงานประจำสัปดาห์ของกลุ่ม: "{group_name}"
 
 โปรดจัดทำรายงานสรุปภาษาไทยที่มีรูปแบบอ่านง่าย กระชับ ชัดเจน โดยแบ่งหมวดหมู่ตามนี้:
@@ -55,14 +53,33 @@ def summarize_weekly_report(group_name: str, messages: list, gemini_api_key: str
 - เน้นข้อเท็จจริง วันที่ ตัวเลข หรือชื่อผู้รับผิดชอบ (ถ้ามี)
 - ใช้ข้อความกระชับ อ่านง่าย เหมาะกับการอ่านใน LINE
 """
+        # วิธีที่ 1: เรียกผ่าน REST API โดยตรง (รองรับคีย์ AQ. ได้ 100% แน่นอน)
+        try:
+            import requests
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            res = requests.post(url, json=payload, timeout=20)
+            if res.status_code == 200:
+                data = res.json()
+                text = data['candidates'][0]['content']['parts'][0]['text']
+                if text:
+                    return text.strip()
+            else:
+                print(f"[REST Gemini Error] {res.status_code}: {res.text}")
+        except Exception as e:
+            print(f"[REST Exception] {e}")
+
+        # วิธีที่ 2: เรียกผ่าน SDK สำรอง
+        try:
+            client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-flash-latest',
                 contents=prompt,
             )
             if response.text:
                 return response.text.strip()
         except Exception as e:
-            print(f"[AI Summarizer Error] {e}")
+            print(f"[AI Summarizer SDK Error] {e}")
 
     # Fallback กรณีไม่ได้ใส่ Gemini API Key หรือเรียก API ไม่สำเร็จ
     header = f"📊 รายงานสรุปการทำงานประจำสัปดาห์: {group_name}\n"

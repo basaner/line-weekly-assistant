@@ -258,27 +258,53 @@ def handle_image_message(event):
     # 2. ให้ Gemini วิเคราะห์รูปภาพ (พร้อมคัดกรอง Noise)
     analysis_text = ""
     if GEMINI_API_KEY:
+        prompt_img = (
+            "วิเคราะห์รูปภาพนี้: หากเป็นภาพที่เกี่ยวกับการทำงาน (เช่น เครื่องจักร, ชิ้นงาน, ข้อบกพร่อง, เอกสาร, "
+            "กราฟ, รายงาน, หน้าจอ, หรือหน้างาน) จงสรุปประเด็นสำคัญ ตัวเลข หรือข้อความที่พบอย่างกระชับใน 1-2 ประโยค "
+            "แต่หากเป็นภาพที่ไม่เกี่ยวกับการทำงานเลย (เช่น รูปอาหาร, ดอกไม้ทักทาย, มีมตลก, เซลฟี่) ให้ตอบกลับเพียงคำเดียวว่า 'IGNORE'"
+        )
+        # ลองทาง REST API โดยตรง
         try:
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            prompt = (
-                "วิเคราะห์รูปภาพนี้: หากเป็นภาพที่เกี่ยวกับการทำงาน (เช่น เครื่องจักร, ชิ้นงาน, ข้อบกพร่อง, เอกสาร, "
-                "กราฟ, รายงาน, หน้าจอ, หรือหน้างาน) จงสรุปประเด็นสำคัญ ตัวเลข หรือข้อความที่พบอย่างกระชับใน 1-2 ประโยค "
-                "แต่หากเป็นภาพที่ไม่เกี่ยวกับการทำงานเลย (เช่น รูปอาหาร, ดอกไม้ทักทาย, มีมตลก, เซลฟี่) ให้ตอบกลับเพียงคำเดียวว่า 'IGNORE'"
-            )
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                    prompt
-                ]
-            )
-            res_text = response.text.strip() if response.text else ""
-            if "IGNORE" in res_text.upper():
-                print(f"[Image Filtered] ภาพไม่เกี่ยวกับงาน (ข้ามการบันทึก)")
-                return
-            analysis_text = res_text
+            import base64
+            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={GEMINI_API_KEY}"
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"inline_data": {"mime_type": "image/jpeg", "data": b64_data}},
+                        {"text": prompt_img}
+                    ]
+                }]
+            }
+            res = requests.post(url, json=payload, timeout=20)
+            if res.status_code == 200:
+                res_json = res.json()
+                res_text = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
+                if "IGNORE" in res_text.upper():
+                    print(f"[Image Filtered] ภาพไม่เกี่ยวกับงาน (ข้ามการบันทึก)")
+                    return
+                analysis_text = res_text
         except Exception as e:
-            print(f"[Gemini Vision Error] {e}")
+            print(f"[REST Vision Error] {e}")
+
+        # ถ้า REST ไม่ผ่าน ลองทาง SDK
+        if not analysis_text:
+            try:
+                client = genai.Client(api_key=GEMINI_API_KEY)
+                response = client.models.generate_content(
+                    model='gemini-flash-latest',
+                    contents=[
+                        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                        prompt_img
+                    ]
+                )
+                res_text = response.text.strip() if response.text else ""
+                if "IGNORE" in res_text.upper():
+                    print(f"[Image Filtered] ภาพไม่เกี่ยวกับงาน (ข้ามการบันทึก)")
+                    return
+                analysis_text = res_text
+            except Exception as e:
+                print(f"[Gemini Vision Error] {e}")
 
     if not analysis_text:
         analysis_text = "ภาพถ่ายประกอบงาน"
