@@ -1,6 +1,7 @@
 import os
 import uvicorn
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -289,13 +290,15 @@ def handle_image_message(event):
     save_message(group_id, user_id or "unknown", user_name, full_record)
     send_to_google_sheet(g_name, user_name, full_record)
 
-# ----------------- ตั้งเวลารันอัตโนมัติ (SCHEDULER) -----------------
-scheduler = BackgroundScheduler()
+# ----------------- ตั้งเวลารันอัตโนมัติ (SCHEDULER: เวลาไทย Asia/Bangkok) -----------------
+BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
+scheduler = BackgroundScheduler(timezone=BANGKOK_TZ)
 
 def auto_weekly_broadcast():
-    """ส่งรายงานสรุปอัตโนมัติทุกกลุ่มที่ลงทะเบียน ทุกวันศุกร์ 17:00"""
+    """ส่งรายงานสรุปอัตโนมัติทุกกลุ่มที่ลงทะเบียน ทุกวันศุกร์ 17:00 (เวลาไทย)"""
     groups = get_registered_groups()
-    print(f"[{datetime.now()}] เริ่มกระบวนการส่งรายงานอัตโนมัติ {len(groups)} กลุ่ม")
+    now_th = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{now_th}] เริ่มกระบวนการส่งรายงานอัตโนมัติประจำวันศุกร์ 17:00 น. ทั้งหมด {len(groups)} กลุ่ม")
     for g in groups:
         gid = g["group_id"]
         gname = g["group_name"]
@@ -308,8 +311,8 @@ def auto_weekly_broadcast():
         except Exception as e:
             print(f"ไม่สามารถส่งรายงานกลุ่ม '{gname}': {e}")
 
-# ตั้งให้รันทุกวันศุกร์ เวลา 17:00 น.
-scheduler.add_job(auto_weekly_broadcast, 'cron', day_of_week='fri', hour=17, minute=0)
+# ตั้งให้รันทุกวันศุกร์ เวลา 17:00 น. (เวลาประเทศไทย UTC+7)
+scheduler.add_job(auto_weekly_broadcast, 'cron', day_of_week='fri', hour=17, minute=0, timezone=BANGKOK_TZ)
 scheduler.start()
 
 # ----------------- WEB DASHBOARD -----------------
