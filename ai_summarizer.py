@@ -53,21 +53,26 @@ def summarize_weekly_report(group_name: str, messages: list, gemini_api_key: str
 - เน้นข้อเท็จจริง วันที่ ตัวเลข หรือชื่อผู้รับผิดชอบ (ถ้ามี)
 - ใช้ข้อความกระชับ อ่านง่าย เหมาะกับการอ่านใน LINE
 """
-        # วิธีที่ 1: เรียกผ่าน REST API โดยตรง (รองรับคีย์ AQ. ได้ 100% แน่นอน)
-        try:
-            import requests
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            res = requests.post(url, json=payload, timeout=20)
-            if res.status_code == 200:
-                data = res.json()
-                text = data['candidates'][0]['content']['parts'][0]['text']
-                if text:
-                    return text.strip()
-            else:
-                print(f"[REST Gemini Error] {res.status_code}: {res.text}")
-        except Exception as e:
-            print(f"[REST Exception] {e}")
+        # เรียกผ่าน REST API โดยตรงด้วยโมเดลความเร็วสูง gemini-flash-lite-latest
+        for target_model in ['gemini-flash-lite-latest', 'gemini-flash-latest']:
+            try:
+                import requests
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key
+                }
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                res = requests.post(url, headers=headers, json=payload, timeout=25)
+                if res.status_code == 200:
+                    data = res.json()
+                    text = data['candidates'][0]['content']['parts'][0]['text']
+                    if text:
+                        return text.strip()
+                else:
+                    print(f"[REST Gemini Error {target_model}] {res.status_code}: {res.text}")
+            except Exception as e:
+                print(f"[REST Exception {target_model}] {e}")
 
         # วิธีที่ 2: เรียกผ่าน SDK สำรอง
         try:
