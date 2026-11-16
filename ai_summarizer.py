@@ -84,7 +84,10 @@ def summarize_weekly_report(group_name: str, messages: list, gemini_api_key: str
     # Fallback กรณีไม่ได้ใส่ Gemini API Key หรือเรียก API ไม่สำเร็จ
     header = f"📊 รายงานสรุปการทำงานประจำสัปดาห์: {group_name}\n"
     header += f"📅 ข้อมูลช่วง 7 วันล่าสุด ({len(messages)} ข้อความที่บันทึก)\n\n"
-    header += "💡 (เพื่อการสรุปแบบแยกหมวดหมู่อัตโนมัติด้วย AI กรุณาใส่ GEMINI_API_KEY ในไฟล์ .env)\n\n"
+    if not api_key:
+        header += "💡 (เพื่อการสรุปแบบแยกหมวดหมู่อัตโนมัติด้วย AI กรุณาใส่ GEMINI_API_KEY ใน Render)\n\n"
+    else:
+        header += "⚠️ (Google AI แจ้งเตือน: API Key นี้ติดโควต้า 429 Quota Exceeded หรือยังไม่ได้ผูกสิทธิ์ Free Tier แนะนำให้ใช้บัญชี Gmail ส่วนตัวสร้าง Key ใหม่ครับ)\n\n"
     header += "📝 บันทึกประเด็นงานสำคัญล่าสุด:\n"
     
     # แสดงตัวอย่างข้อความเด่นๆ ไม่เกิน 15 ข้อความ
